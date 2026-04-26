@@ -1,0 +1,56 @@
+---
+title: 이 블로그는 어떻게 지었나
+description: Astro 6 + Tailwind v4 + MDX. 고른 이유와, 그 안에서 한 작은 결정들.
+pubDate: 2026-04-27
+tags: ['note', 'astro']
+---
+
+지난 글에서 "다음 글은 기술 메모"라고 적었으니 약속을 지킨다. 다만 튜토리얼은 아니다. Astro로 블로그 만드는 법은 이미 좋은 글이 많고, 내가 더 잘 쓸 자신도 없다. 대신 **고를 때 무엇을 두고 갈등했는지** 위주로 적는다.
+
+## 왜 Astro였나
+
+이번에 필요했던 건 두 가지였다 — **MDX를 쓸 수 있을 것**, 그리고 **JS 번들이 기본 0일 것**. Next도 후보였지만 글 위주의 사이트에 React 런타임이 기본으로 깔리는 게 마음에 걸렸다. Astro는 정반대 방향이다. 컴포넌트로 만들고 결과물은 정적 HTML, 인터랙티브가 필요할 때만 island를 쓴다. 이 블로그도 클라이언트 JS는 테마 토글 하나뿐이다.
+
+## 고른 것들
+
+폰트는 셋. **본문은 Newsreader**, UI는 Pretendard, 코드는 JetBrains Mono. 본문에 세리프를 둔 건 "이건 글이지, 화면이 아니다"라고 말하고 싶어서다. 셋 다 `@fontsource`로 자체 호스팅 — Google Fonts CDN을 안 쓰면 외부 요청 한 묶음이 통째로 사라진다.
+
+색은 머스터드 액센트(`#c9a227`) 하나. 보라/파랑 그라데이션이 흔해서 일부러 피했다. 라이트 모드는 종이색 배경, 다크 모드는 짙은 잉크색. 액센트가 보이는 자리는 두 군데뿐이다 — 인라인 코드와 링크 밑줄.
+
+```css
+@theme {
+  --color-paper: #efe9dd;
+  --color-ink: #15202b;
+  --color-mustard: #c9a227;
+}
+```
+
+Tailwind는 v4. `tailwind.config.js`가 없고 `@theme` 블록 하나로 토큰을 선언한다. 처음엔 어색했는데 적응하니 v3로 돌아가기 싫다.
+
+`@tailwindcss/typography`는 안 썼다. `.prose` 클래스를 직접 짰다. 플러그인은 좋지만 내가 원하는 결—세리프 본문, 모노 메타, 머스터드 액센트—을 얻으려면 결국 override를 잔뜩 붙여야 했다. 처음부터 직접 짜는 쪽이 짧았다.
+
+## 막혔던 것
+
+다크모드 토글을 만들면 누구나 한 번 겪는 — **첫 페인트 직전의 깜빡임**. 사용자는 다크를 저장해뒀는데 새로고침하면 라이트 화면이 0.1초 보이고 다크로 바뀐다. CSS 트랜지션을 켜뒀다면 더 거슬린다.
+
+방법은 단순하다. `<head>` 안쪽에 동기 스크립트로 `localStorage`를 먼저 읽고 `<html>`에 클래스를 붙인다. Astro에선 `is:inline`을 붙여 번들링을 막는다.
+
+```astro
+<script is:inline>
+  const stored = localStorage.getItem('theme');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  if (stored === 'dark' || (!stored && prefersDark)) {
+    document.documentElement.classList.add('dark');
+  }
+</script>
+```
+
+또 하나 — content collection 스키마에서 `pubDate`를 `z.date()`로 두면 frontmatter의 `2026-04-26` 문자열을 못 받는다. `z.coerce.date()`로 바꿔야 통과한다. 사소하지만 한참 헤맸다.
+
+## 아직 안 된 것
+
+- **RSS**. `<head>`에 `alternate` 링크는 박혀 있는데 정작 `/rss.xml` 엔드포인트가 없다. `@astrojs/rss`만 설치돼 있는 상태.
+- **Draft 필터**. 스키마에 `draft` 필드는 있지만 목록·상세 페이지에서 거르는 코드는 아직 없다.
+- **본문 컴포넌트**. Callout, Figure 같은 MDX용 작은 것들. 필요해질 때 만든다.
+
+원래 다 끝내고 발행하려다, 그게 앞선 두 블로그를 멈추게 했던 패턴이라는 걸 떠올리고 멈췄다. 부족한 채로 발행하고, 글 쓰면서 채운다.
