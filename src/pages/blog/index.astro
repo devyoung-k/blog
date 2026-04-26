@@ -1,0 +1,74 @@
+---
+import { getCollection } from 'astro:content';
+import FormattedDate from '../../components/FormattedDate.astro';
+import Layout from '../../layouts/Layout.astro';
+import { SITE_TITLE } from '../../consts';
+
+const posts = (await getCollection('blog', ({ data }) => !data.draft)).sort(
+  (a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf(),
+);
+
+const groupedByYear = posts.reduce<Record<string, typeof posts>>(
+  (acc, post) => {
+    const year = String(post.data.pubDate.getFullYear());
+    (acc[year] ??= []).push(post);
+    return acc;
+  },
+  {},
+);
+
+const years = Object.keys(groupedByYear).sort((a, b) => Number(b) - Number(a));
+---
+
+<Layout
+  title={`Writing — ${SITE_TITLE}`}
+  description="발행된 모든 글의 목록."
+>
+  <section class="mx-auto max-w-2xl px-6 pt-20 pb-16 sm:pt-24">
+    <p class="meta mb-4">Writing</p>
+    <h1 class="text-3xl font-semibold tracking-tight sm:text-[2.25rem]">
+      쓴 것들
+    </h1>
+    <p class="mt-4 text-[15px] text-(--fg-muted)">
+      총 {posts.length}편.
+    </p>
+  </section>
+
+  {
+    years.length === 0 ? (
+      <p class="mx-auto max-w-2xl px-6 pb-24 text-sm text-(--fg-muted)">
+        아직 발행한 글이 없습니다.
+      </p>
+    ) : (
+      years.map((year) => (
+        <section class="mx-auto max-w-2xl border-t border-(--rule) px-6 py-10">
+          <h2 class="meta mb-6">{year}</h2>
+          <ul class="flex flex-col">
+            {groupedByYear[year].map((post) => (
+              <li class="border-b border-(--rule) last:border-b-0">
+                <a
+                  href={`/blog/${post.id}/`}
+                  class="group flex flex-col gap-1 py-5 no-underline sm:flex-row sm:items-baseline sm:gap-6"
+                >
+                  <span class="meta sm:w-28 sm:shrink-0">
+                    <FormattedDate date={post.data.pubDate} />
+                  </span>
+                  <div class="flex-1">
+                    <h3 class="text-[17px] font-medium tracking-tight transition-colors group-hover:text-(--accent)">
+                      {post.data.title}
+                    </h3>
+                    {post.data.description && (
+                      <p class="mt-1 text-sm text-(--fg-muted)">
+                        {post.data.description}
+                      </p>
+                    )}
+                  </div>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))
+    )
+  }
+</Layout>

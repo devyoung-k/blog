@@ -1,0 +1,51 @@
+---
+import type { CollectionEntry } from 'astro:content';
+import FormattedDate from '../components/FormattedDate.astro';
+import Layout from './Layout.astro';
+
+type Props = CollectionEntry<'blog'>['data'];
+
+const { title, description, pubDate, updatedDate, tags } = Astro.props;
+---
+
+<Layout title={title} description={description}>
+  <article class="mx-auto max-w-2xl px-6 pt-16 pb-8">
+    <header class="mb-12">
+      <div class="meta mb-4 flex items-center gap-3">
+        <FormattedDate date={pubDate} />
+        {
+          tags && tags.length > 0 && (
+            <>
+              <span class="text-(--rule)">·</span>
+              <span>{tags.join(' / ')}</span>
+            </>
+          )
+        }
+      </div>
+      <h1
+        class="text-3xl font-semibold tracking-tight sm:text-[2.25rem]"
+      >
+        {title}
+      </h1>
+      {
+        description && (
+          <p class="mt-4 text-base text-(--fg-muted) sm:text-lg">
+            {description}
+          </p>
+        )
+      }
+    </header>
+
+    <div class="prose">
+      <slot />
+    </div>
+
+    {
+      updatedDate && (
+        <p class="meta mt-12 border-t border-(--rule) pt-6">
+          마지막 업데이트 <FormattedDate date={updatedDate} />
+        </p>
+      )
+    }
+  </article>
+</Layout>

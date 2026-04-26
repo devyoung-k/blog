@@ -1,0 +1,30 @@
+---
+import { SITE_AUTHOR } from '../consts';
+
+const year = new Date().getFullYear();
+---
+
+<footer class="mt-24 border-t border-(--rule)">
+  <div
+    class="mx-auto flex max-w-3xl flex-col gap-2 px-6 py-8 text-sm text-(--fg-muted) sm:flex-row sm:items-center sm:justify-between"
+  >
+    <p class="meta">© {year} {SITE_AUTHOR}</p>
+
+    <div class="flex items-center gap-4">
+      <a
+        href="/rss.xml"
+        class="meta no-underline hover:text-(--fg)"
+      >
+        RSS
+      </a>
+      <a
+        href="https://github.com/devyoung-k"
+        target="_blank"
+        rel="noopener"
+        class="meta no-underline hover:text-(--fg)"
+      >
+        GitHub
+      </a>
+    </div>
+  </div>
+</footer>

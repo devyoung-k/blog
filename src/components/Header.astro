@@ -1,0 +1,29 @@
+---
+import { SITE_TITLE } from '../consts';
+import HeaderLink from './HeaderLink.astro';
+import ThemeToggle from './ThemeToggle.astro';
+---
+
+<header
+  class="border-b border-(--rule) bg-(--bg)/85 backdrop-blur-sm"
+>
+  <div
+    class="mx-auto flex h-14 max-w-3xl items-center justify-between px-6"
+  >
+    <a
+      href="/"
+      class="text-[15px] font-semibold tracking-tight no-underline"
+    >
+      {SITE_TITLE}
+    </a>
+
+    <nav class="flex items-center gap-6">
+      <div class="flex items-center gap-5">
+        <HeaderLink href="/blog">Writing</HeaderLink>
+        <HeaderLink href="/about">About</HeaderLink>
+      </div>
+      <span class="h-4 w-px bg-(--rule)"></span>
+      <ThemeToggle />
+    </nav>
+  </div>
+</header>
