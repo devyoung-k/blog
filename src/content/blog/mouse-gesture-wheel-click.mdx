@@ -1,0 +1,126 @@
+---
+title: 휠 클릭으로 시작하는 마우스 제스처
+description: Windows 저수준 마우스 훅으로 작은 제스처 유틸을 만들면서 정한 트리거와 처리 흐름.
+pubDate: 2026-05-10
+tags: ['note', 'windows', 'dotnet']
+---
+
+요즘 쓰는 모니터가 넓어지면서 가상 데스크탑을 더 자주 쓰게 됐다. `Ctrl + Win + ←`, `Ctrl + Win + →`, `Win + Tab`, `Win + D`. 외우기 어려운 단축키는 아닌데, 손이 키보드 위에 없을 때마다 흐름이 한 번씩 끊겼다.
+
+그래서 마우스 제스처 유틸을 하나 만들었다. 휠 클릭을 누른 채 왼쪽으로 움직이면 이전 데스크탑, 오른쪽으로 움직이면 다음 데스크탑, 위로 움직이면 작업 보기, 아래로 움직이면 바탕 화면. 이름은 그냥 `MouseGesture`.
+
+## 왜 휠 클릭인가
+
+거창한 이유는 아니었다. 그냥 내가 그 방식을 선호한다. Logi Options+에서도 휠 클릭을 트리거로 제스처를 쓰고 있었고, 손이 이미 그 감각에 익숙했다. 새로 만든 유틸도 매일 쓰려면 기존 손동작을 그대로 가져오는 게 맞았다.
+
+오른쪽 버튼을 일부러 피했다기보다는, 휠 클릭이 내 기본 습관에 가까웠다. 다만 구현하면서 보니 전역 제스처 트리거로도 나쁘지 않았다. 브라우저에서는 새 탭 열기나 자동 스크롤 같은 동작이 있지만, 내가 제스처를 쓰려는 상황은 대부분 창 전환이나 데스크탑 이동이라 충돌이 크지 않았다.
+
+여기서 말하는 휠 클릭은 스크롤 이벤트가 아니다. Windows 메시지로 보면 `WM_MOUSEWHEEL`이 아니라 `WM_MBUTTONDOWN`, `WM_MBUTTONUP` 쪽이다. 스크롤 휠을 굴리는 동작은 그대로 두고, 휠을 버튼처럼 누르는 순간만 트리거로 쓴다.
+
+```cs
+private bool IsTriggerDown(in MouseHookEvent ev) => _trigger switch
+{
+    TriggerButton.Right => ev.Type == MouseEventType.RightDown,
+    TriggerButton.Middle => ev.Type == MouseEventType.MiddleDown,
+    TriggerButton.XButton1 => ev.Type == MouseEventType.XButtonDown && ev.XButton == 1,
+    TriggerButton.XButton2 => ev.Type == MouseEventType.XButtonDown && ev.XButton == 2,
+    _ => false,
+};
+```
+
+트리거를 enum으로 빼둔 건 생각보다 중요했다. 처음부터 "휠 클릭만 지원"으로 박아두면 구현은 짧지만, 마우스마다 버튼 감각이 다르다. 어떤 사람은 휠 클릭이 뻑뻑하고, 어떤 사람은 사이드 버튼이 더 편하다. 입력 처리의 중심은 그대로 두고 트리거만 바꿀 수 있게 하는 쪽이 낫다.
+
+## 훅은 짧게 잡고 빨리 넘긴다
+
+전역 마우스 제스처를 만들려면 결국 저수준 마우스 훅을 건드리게 된다. 이 프로젝트는 `WH_MOUSE_LL` 훅을 별도 백그라운드 스레드에 설치하고, 그 스레드가 자체 메시지 루프를 돌게 했다.
+
+```cs
+_thread = new Thread(() => HookThread(ready))
+{
+    IsBackground = true,
+    Name = "MouseGesture.Hook",
+};
+```
+
+중요한 건 훅 콜백 안에서 오래 머물지 않는 것이다. 훅 콜백은 사용자가 마우스를 움직일 때마다 들어온다. 여기서 파일을 읽거나, 프로세스를 실행하거나, UI를 직접 만지면 마우스 입력 전체가 둔해질 수 있다. 더 나쁘면 Windows가 훅을 조용히 끊어버릴 수도 있다.
+
+그래서 훅에서는 이벤트를 파싱하고, 필요한 경우에만 `Suppress`를 켠 뒤 바로 빠져나온다.
+
+```cs
+if (TryParse((int)wParam, in data, out var ev))
+{
+    var args = instance._argsBuffer;
+    args.Event = ev;
+    args.Suppress = false;
+    instance._events.OnNext(args);
+    suppress = args.Suppress;
+}
+
+return suppress ? 1 : Win32.CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
+```
+
+액션 실행은 다른 스레드로 넘긴다.
+
+```cs
+ThreadPool.UnsafeQueueUserWorkItem(
+    static state => state.self.Run(state.gesture, state.action),
+    (self, gesture, action),
+    preferLocal: false);
+```
+
+작은 유틸일수록 이런 부분이 중요하다. 기능이 많은 앱은 조금 무거워도 사용자가 예상한다. 하지만 트레이에 숨어 있는 입력 도구는 존재감이 없어야 한다. 사용자가 느끼는 순간 이미 실패에 가깝다.
+
+## 클릭과 제스처 사이
+
+제스처 인식에서 의외로 신경 쓴 부분은 "그냥 클릭"이다. 휠 클릭을 누르고 마우스를 거의 움직이지 않았다면 그건 제스처가 아니라 원래 휠 클릭이어야 한다. 훅에서 트리거 down/up을 모두 삼켰기 때문에, 아무 처리도 하지 않으면 원래 앱은 휠 클릭이 있었다는 사실을 모른다.
+
+그래서 움직임이 일정 거리 이상 쌓이지 않으면 같은 버튼 클릭을 다시 합성해서 보내준다.
+
+```cs
+private void FinishCapture(int x, int y)
+{
+    _capturing = false;
+    if (_actionFired)
+        return;
+    if (_sequence.Count == 0)
+    {
+        SynthesizeTriggerClick();
+        return;
+    }
+    _recognized.OnNext(new Gesture([.. _sequence]));
+}
+```
+
+이 구조 덕분에 휠 클릭을 제스처 트리거로 써도 원래 클릭 동작을 완전히 버리지 않는다. 눌렀다가 떼면 클릭이고, 누른 채 충분히 움직이면 제스처다. 작은 차이지만 실제로 매일 쓰려면 이런 경계가 훨씬 중요하다.
+
+거리 기준도 두 개로 나눴다. 처음 제스처가 시작되기 전에는 `InitialDeadZone`을 보고, 이후에는 `MinSegmentDistance`를 본다. 손이 아주 조금 흔들린 것까지 제스처로 보면 오동작이 많아진다. 반대로 기준이 너무 크면 사용자가 일부러 크게 그려야 해서 도구가 굼떠진다.
+
+```cs
+public int MinSegmentDistance { get; set; } = 30;
+public int InitialDeadZone { get; set; } = 10;
+```
+
+지금은 단일 방향 제스처만 쓴다. `L`, `R`, `U`, `D` 네 개. 처음부터 `URD` 같은 복합 제스처까지 열어두고 싶었지만, 실제로 가장 자주 쓰는 건 가상 데스크탑 이동이었다. 복잡한 제스처를 많이 만들수록 외우는 비용이 생긴다. 지금은 한 번 움직이고 바로 실행되는 쪽이 더 맞다.
+
+## 기본 매핑
+
+기본 매핑은 아주 단순하다.
+
+```cs
+map.Bind("L", BuiltInActions.PreviousDesktop);
+map.Bind("R", BuiltInActions.NextDesktop);
+map.Bind("U", BuiltInActions.TaskView);
+map.Bind("D", BuiltInActions.ShowDesktop);
+```
+
+결국 이 앱이 하는 일은 마우스 움직임을 Windows 단축키로 바꾸는 것이다. `KeyComboAction`이 가상 키 조합을 보내고, 제스처 맵은 문자열 stroke를 액션에 연결한다. 이 정도 분리만 해도 테스트하기가 쉬워진다. 제스처 문자열이 맞게 만들어지는지, 매핑이 저장됐다가 다시 살아나는지, 모르는 액션은 무시되는지 같은 것들을 UI 없이 확인할 수 있다.
+
+설정은 `%APPDATA%\MouseGesture\bindings.json`에 저장한다. 트리거 버튼도 같은 파일에 같이 둔다. 이런 유틸은 계정마다 다른 감각으로 쓰게 되니까, 레지스트리보다 파일 하나가 편하다. 지우면 초기화되고, 백업도 쉽다.
+
+## 아직 거친 부분
+
+만들고 나서 보니 문서와 구현 사이에 아직 맞지 않는 부분이 있다. README에는 오른쪽 버튼 중심 설명이 남아 있고, 코드 기본값도 아직 오른쪽 버튼이다. 실제로 내가 쓰려는 기본 트리거는 휠 클릭이니 이건 정리해야 한다.
+
+그래도 방향은 정해졌다. 마우스 제스처 유틸은 기능을 많이 넣는 것보다 입력을 방해하지 않는 게 먼저다. 휠 클릭을 누른 순간만 잠깐 빌리고, 제스처가 아니면 원래 클릭으로 돌려주고, 액션 실행은 훅 스레드 밖으로 밀어낸다.
+
+작은 도구지만 이런 종류의 코드는 재밌다. 화면을 크게 만들 필요도 없고, 멋진 대시보드가 필요한 것도 아니다. 매일 반복하던 손동작 하나가 줄어들면 그걸로 충분하다.
